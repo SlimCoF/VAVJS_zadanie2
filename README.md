@@ -1,3 +1,3 @@
-#VAVJS_zadanie2
+# VAVJS_zadanie2
 
 Vesmírna hra
