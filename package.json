@@ -11,6 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "ws": "^1.0.34",
-    "express": "^4.17.1"
+    "express": "^4.17.1",
+    "json2csv": "^5.0.6"
   }
 }
