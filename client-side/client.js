@@ -179,7 +179,7 @@ const page =
                                         "element": "input",
                                         "id": "spectateInput",
                                         "style": inputStyle,
-                                        "placeholder": "pin"
+                                        "placeholder": "session"
                                     },
                                     {
                                         "element": "button",
@@ -211,12 +211,12 @@ const page =
                             },
                             {
                                 "element": "p",
-                                "innerHTML": "pin: ",
+                                "innerHTML": "session: ",
                                 "children": 
                                 [
                                     {
                                         "element": "span",
-                                        "id": "pinSpan",
+                                        "id": "sessionSpan",
                                         "innerHTML": "-",
                                     }
                                 ]
@@ -289,40 +289,56 @@ const socket = new WebSocket('ws://localhost:8082');
 socket.addEventListener('open', (ev) => {
     console.log(ev);
 });
-socket.addEventListener('open', (ev) => {
-    const payLoad = {
-        "method": "pin",
-        "content": content
-    };
-    socket.send(JSON.stringify(payLoad));
-});
+// socket.addEventListener('open', (ev) => {
+//     const payLoad = {
+//         "method": "session",
+//         "content": content
+//     };
+//     socket.send(JSON.stringify(payLoad));
+// });
 
-socket.onclose = function(e){
-    const payLoad = {
-        "method": "closing",
-        "content": "closing"
-    };
-    socket.send(JSON.stringify(payLoad));
-}
-// Global variable for user PIN
-let pin = -1;
+// socket.onclose = function(e){
+//     const payLoad = {
+//         "method": "closing",
+//         "content": "closing"
+//     };
+//     socket.send(JSON.stringify(payLoad));
+// }
+
+
+// Global variable for user session
+let session = -1;
 
 // print message that server send to client
 socket.addEventListener('message', (msg) => {
     var json = JSON.parse(msg.data);
 
+    // Registration response
     if(json.method === "registrationFailed"){
         alert(json.content);
     }else if(json.method === "registrationSucess"){
-        pin = json.content.pin;
+        session = json.content.session;
         statusSpan = document.getElementById("statusSpan");
         statusSpan.innerHTML = "online";
         statusSpan.style.color = "green";
 
-        pinSpan = document.getElementById("pinSpan");
-        pinSpan.innerHTML = pin;
+        sessionSpan = document.getElementById("sessionSpan");
+        sessionSpan.innerHTML = session;
 
         console.log("Registration sucessfull!!");
+    // Login response
+    }else if(json.method === "loginFailed"){
+        alert(json.content);
+    }else if(json.method === "loginSucess"){
+        session = json.content.session;
+        statusSpan = document.getElementById("statusSpan");
+        statusSpan.innerHTML = "online";
+        statusSpan.style.color = "green";
+
+        sessionSpan = document.getElementById("sessionSpan");
+        sessionSpan.innerHTML = session;
+        
+        console.log("Logged In");
     }
     // console.log('Hashed login: ' + json.login);
 });
@@ -339,7 +355,6 @@ spectateInput = document.getElementById('spectateInput');
 registerButton = document.getElementById('registerButton');
 registerButton.addEventListener('click', () => {    
     const content = {
-        "pin": pin,
         "username": usernameInput.value,
         "password": passwordInput.value,
         "email": emailInput.value,
@@ -351,11 +366,19 @@ registerButton.addEventListener('click', () => {
     };
     socket.send(JSON.stringify(payLoad));
 });
-// TODO: LOGIN BUTTON (and other stuff...)
+
+// Login Button
 loginButton = document.getElementById('loginButton');
 loginButton.addEventListener('click', function(){
-    console.log(usernameInput.value);
-    console.log(passwordInput.value);
+    const content = {
+        "username": usernameInput.value,
+        "password": passwordInput.value,
+    };
+    const payLoad = {
+        "method": "login",
+        "content": content
+    };
+    socket.send(JSON.stringify(payLoad));
 });
 
 
