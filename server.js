@@ -27,11 +27,7 @@ for (let i of fileData){
 // console.log(clientsData);
 // all active clients {session: connection}
 activeClients = {};
-
-// all values necessary for game
-gameValues = {};
-
-
+activeGames = [];
 
 httpPort = 8080;
 const app = express();
@@ -51,8 +47,7 @@ wsServer.on('connection', (ws) => {
     ws.spectate = false;
     ws.spectators = [];
     ws.session = -1;
-
-    gameValues[ws] =  {
+    ws.gameValues = {
         'ship': [104, 114, 115, 116],
         'aliens': [1, 3, 5, 7, 9, 23, 25, 27, 29, 31],
         'missiles': [],
@@ -61,6 +56,7 @@ wsServer.on('connection', (ws) => {
         'speed': 512,
         'intervals': [],
         'score': 0,
+        'actualBest': 0,
         'levelCounter': 1,
     }
 
@@ -69,22 +65,56 @@ wsServer.on('connection', (ws) => {
         // If client turn off the fame remove him from activeClients.
         delete activeClients[ws.session];
         console.log("closed!");
-        if(gameValues[ws].intervals.length !== 0 ){
-            for(i in gameValues[ws].intervals){
-                clearInterval(gameValues[ws].intervals[i]);
+
+        if(ws.running === true){
+            
+            // CAN BE IN FUNCTION
+            const index = activeGames.indexOf(ws.session);
+            activeGames.splice(index, 1);
+            payLoad = {
+                "method": "updateActives",
+                "content": activeGames
+            }
+            for(i in activeClients){
+                activeClients[i].send(JSON.stringify(payLoad));
             }
         }
+
+        // Clear all intervlas
+        if(ws.gameValues.intervals.length !== 0){
+            for(i in ws.gameValues.intervals){
+                clearInterval(ws.gameValues.intervals[i]);
+            }
+        }
+
+        // If client was spectator remove him from another clients spectator list
         if(ws.spectate !== false){
             const index = ws.spectate.spectators.indexOf(ws);
             ws.spectate.spectators.splice(index, 1);
             ws.spectate = false;
+        }
+
+        // TODO: Announce all client spectators, if any, about closing
+        for(i in ws.spectators){
+            const content = {};
+            ws.spectators[i].spectate = false;
+            if(isActive(ws.spectators[i])){
+                content["status"] = "online";  
+            }else{
+                content["status"] = "offline";
+            }
+            const payLoad = {
+                "method": "spectatedClose",
+                "content": content
+            }
+            ws.spectators[i].send(JSON.stringify(payLoad));
         }
     });
     ws.on('message', (msg) => {
         let json = JSON.parse(msg);
         let payLoad = {};
 
-        // User want to register
+        // User want to sign up
         if (json.method === "register" && ws.spectate === false){
             if(activeClients[ws.session] !== undefined){
                 payLoad = {
@@ -125,7 +155,7 @@ wsServer.on('connection', (ws) => {
         } else if (json.method === "login" && ws.spectate === false){
             if(activeClients[ws.session] !== undefined){
                 payLoad = {
-                    "method": "registrationFailed",
+                    "method": "loginFailed",
                     "content": "You are already online!!"
                 }  
             }else{
@@ -153,7 +183,7 @@ wsServer.on('connection', (ws) => {
                     if(admin){
                         const content = {
                             "session": session,
-                            "users": clientsData
+                            "users": clientsData,
                         };
                         payLoad = {
                             "method": "loginAdmin",
@@ -170,62 +200,98 @@ wsServer.on('connection', (ws) => {
                     }
                 }
             }
-            ws.send(JSON.stringify(payLoad))
+            ws.send(JSON.stringify(payLoad));
+            if(errorMessage !== ""){
+                payLoad = {
+                    "method": "updateActives",
+                    "content": activeGames
+                }
+                ws.send(JSON.stringify(payLoad));
+            }
         }
 
         // User wants to start the game
-        else if(json.method === "start" && ws.spectate === false){
+        else if(json.method === "start" && ws.running === false && ws.spectate === false){
             if(!isActive(json.content)){
                 payLoad = {
                     "method": "startFail",
                     "content": "You are not logged in!!"
                 }
+                ws.send(JSON.stringify(payLoad));
             }else{
-                const content = {
-                    "ship": gameValues[ws].ship
-                }
+                activeGames.push(ws.session);
                 payLoad = {
-                    "method": "startSucess",
-                    "content": content
+                    "method": "updateActives",
+                    "content": activeGames
                 }
+
                 updateGameState(ws);
+                for(i in activeClients){
+                    activeClients[i].send(JSON.stringify(payLoad));
+                }
+            }
+        }
+
+        // User wants to restart the game
+        else if(json.method === "restart" && ws.spectate === false){
+            if(ws.running == true){
+                for(i in ws.gameValues.intervals){
+                    clearInterval(ws.gameValues.intervals[i]);
+                }
+
+                // Set gameValues to initial
+                ws.gameValues =  {
+                    'ship': [104, 114, 115, 116],
+                    'aliens': [1, 3, 5, 7, 9, 23, 25, 27, 29, 31],
+                    'missiles': [],
+                    'direction': 1,
+                    'level': 1,
+                    'speed': 512,
+                    'intervals': [],
+                    'score': 0,
+                    'actualBest': ws.gameValues.actualBest,
+                    'levelCounter': 1,
+                }
+                ws.running = false;
+                payLoad = {
+                    "method": "restartSucess",
+                }
+            }else{
+                payLoad = {
+                    "method": "restartFail",
+                    "content": "You are not in the game!!"
+                }
             }
             ws.send(JSON.stringify(payLoad));
             for(i in ws.spectators){
                 ws.spectators[i].send(JSON.stringify(payLoad));
             }
-        }
 
-        // User pressed key
-        else if(json.method === "keyPress" && ws.running == true && ws.spectate == false){
-            const key = json.content.key;
-            if([37, 71, 39, 74].includes(key)){
-                // Move ship left (<-, G)
-                if([37, 71].includes(key) && gameValues[ws].ship[0] > 100){
-                    for (i = 0; i < gameValues[ws].ship.length; i++) {
-                        gameValues[ws].ship[i]--;
-                    }
-                }
-                // Move ship right (->, J)
-                else if([39, 74].includes(key) && gameValues[ws].ship[0] < 108){
-                    for (i = 0; i < gameValues[ws].ship.length; i++) {
-                        gameValues[ws].ship[i]++;
-                    }
-                }
-                content = {
-                    "ship": gameValues[ws].ship,
-                }
-                payLoad = {
-                    "method": "shipMove",
-                    "content": content
-                }
-            }else if(key === 32){
-                gameValues[ws].missiles.push(gameValues[ws].ship[0] - 11);
+            // CAN BE IN FUNCTION
+            const index = activeGames.indexOf(ws.session);
+            activeGames.splice(index, 1);
+            payLoad = {
+                "method": "updateActives",
+                "content": activeGames
+            }
+            for(i in activeClients){
+                activeClients[i].send(JSON.stringify(payLoad));
             }
         }
 
+        // User pressed key
+        else if(json.method === "keyPress" && (ws.running === true || ws.spectate !== false)){
+            const key = json.content.key;
+            
+            var wsConn = ws;
+            if(ws.spectate !== false){
+                wsConn = ws.spectate
+            }
+            controllShp(wsConn, key)
+        }
+
         // User wants to spectate someone or end spectation
-        else if(json.method === "spectate"){
+        else if(json.method === "spectate" && ws.running !== true){
             var errorMessage = "";
             var content = {};
             if(ws.spectate === false){
@@ -238,8 +304,10 @@ wsServer.on('connection', (ws) => {
                         break;
                     }
                 }
-                ws.spectate = spectatedClient;
-                content["status"] = "online";
+                if(errorMessage === ""){
+                    ws.spectate = spectatedClient;
+                    content["status"] = "online";
+                }
             }else{
                 const index = ws.spectate.spectators.indexOf(ws);
                 ws.spectate.spectators.splice(index, 1);
@@ -263,38 +331,10 @@ wsServer.on('connection', (ws) => {
             }
             ws.send(JSON.stringify(payLoad));
         } 
-
-        // User wants to restart the game
-        else if(json.method === "restart"){
-            if(ws.running == true){
-                for(i in gameValues[ws].intervals){
-                    clearInterval(gameValues[ws].intervals[i]);
-                }
-                gameValues[ws] =  {
-                    'ship': [104, 114, 115, 116],
-                    'aliens': [1, 3, 5, 7, 9, 23, 25, 27, 29, 31],
-                    'missiles': [],
-                    'direction': 1,
-                    'level': 1,
-                    'speed': 512,
-                    'intervals': [],
-                    'score': 0,
-                    'levelCounter': 1,
-                }
-                ws.running = false;
-                payLoad = {
-                    "method": "restartSucess",
-                }
-            }else{
-                payLoad = {
-                    "method": "restartFail",
-                    "content": "User is not in the game!!"
-                }
-            }
-            ws.send(JSON.stringify(payLoad));
-        }
     });
 });
+
+
 
 
 
@@ -322,7 +362,7 @@ function addUser(json){
     // console.log(clientsData.length);
 
     // Add user to CSV table
-    const row = json.username + ";" + json.password + ";" + json.email + ";" + json.name + ";\r\n";
+    const row = json.username + ";" + json.password + ";" + json.email + ";" + json.name + "0;0;\r\n";
     fs.appendFileSync("profiles.csv", row, (err) => {
         if (err)
             console.log(err);
@@ -368,9 +408,13 @@ function registerConditions(json){
                 break;
             }
         }
+
+        // password === secondPassword ?
+        if(json.password !== json.secondPassword){
+            errorString += "passwords do not match!!\n";
+        }
         // correct e-mail format
         if (!(/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/.test(json.email))){
-            console.log(json.email);
             errorString += "email (" + json.email +") have a bad format! Good format example: r.batzbak@email.com \n";
         }
         // correct username format
@@ -445,26 +489,43 @@ function isActive(json){
 
 
 // GAME LOGIC
-
-function nextLevel(ws) {
-    gameValues[ws].level++;
-    console.log('level: ' + gameValues[ws].level);
-    if (gameValues[ws].level == 1) gameValues[ws].aliens = [1, 3, 5, 7, 9, 23, 25, 27, 29, 31];
-    if (gameValues[ws].level == 2) gameValues[ws].aliens = [1, 3, 5, 7, 9, 13, 15, 17, 19, 23, 25, 27, 29, 31];
-    if (gameValues[ws].level == 3) gameValues[ws].aliens = [1, 5, 9, 23, 27, 31];
-    if (gameValues[ws].level == 4) gameValues[ws].aliens = [45, 53];
-    if (gameValues[ws].level > 4) {
-        gameValues[ws].level = 1;
-        gameValues[ws].aliens = [1, 3, 5, 7, 9, 23, 25, 27, 29, 31];
-        gameValues[ws].speed = gameValues[ws].speed / 2;
+function controllShp(wsConn, key){
+    if([37, 71, 39, 74].includes(key)){
+        // Move ship left (<-, G)
+        if([37, 71].includes(key) && wsConn.gameValues.ship[0] > 100){
+            for (i = 0; i < wsConn.gameValues.ship.length; i++) {
+                wsConn.gameValues.ship[i]--;
+            }
+        }
+        // Move ship right (->, J)
+        else if([39, 74].includes(key) && wsConn.gameValues.ship[0] < 108){
+            for (i = 0; i < wsConn.gameValues.ship.length; i++) {
+                wsConn.gameValues.ship[i]++;
+            }
+        }
+    }else if(key === 32){
+        wsConn.gameValues.missiles.push(wsConn.gameValues.ship[0] - 11);
     }
-    gameValues[ws].levelCounter++;
+}
+function nextLevel(ws) {
+    ws.gameValues.level++;
+    console.log('level: ' + ws.gameValues.level);
+    if (ws.gameValues.level == 1) ws.gameValues.aliens = [1, 3, 5, 7, 9, 23, 25, 27, 29, 31];
+    if (ws.gameValues.level == 2) ws.gameValues.aliens = [1, 3, 5, 7, 9, 13, 15, 17, 19, 23, 25, 27, 29, 31];
+    if (ws.gameValues.level == 3) ws.gameValues.aliens = [1, 5, 9, 23, 27, 31];
+    if (ws.gameValues.level == 4) ws.gameValues.aliens = [45, 53];
+    if (ws.gameValues.level > 4) {
+        ws.gameValues.level = 1;
+        ws.gameValues.aliens = [1, 3, 5, 7, 9, 23, 25, 27, 29, 31];
+        ws.gameValues.speed = ws.gameValues.speed / 2;
+    }
+    ws.gameValues.levelCounter++;
     updateGameState(ws);
 }
 
 function RaketaKolidujeSVotrelcom(ws) {
-    for (var i = 0; i < gameValues[ws].aliens.length; i++) {
-        if (gameValues[ws].aliens[i] > 98) {
+    for (var i = 0; i < ws.gameValues.aliens.length; i++) {
+        if (ws.gameValues.aliens[i] > 98) {
             return true;
         }
     }
@@ -472,35 +533,38 @@ function RaketaKolidujeSVotrelcom(ws) {
 }
 
 function checkCollisionsMA(ws) {
-    for (var i = 0; i < gameValues[ws].missiles.length; i++) {
-        if (gameValues[ws].aliens.includes(gameValues[ws].missiles[i])) {
-            var alienIndex = gameValues[ws].aliens.indexOf(gameValues[ws].missiles[i]);
-            gameValues[ws].aliens.splice(alienIndex, 1);
-            gameValues[ws].missiles.splice(i, 1);
-            gameValues[ws].score += 10;
+    for (var i = 0; i < ws.gameValues.missiles.length; i++) {
+        if (ws.gameValues.aliens.includes(ws.gameValues.missiles[i])) {
+            var alienIndex = ws.gameValues.aliens.indexOf(ws.gameValues.missiles[i]);
+            ws.gameValues.aliens.splice(alienIndex, 1);
+            ws.gameValues.missiles.splice(i, 1);
+            ws.gameValues.score += 10;
+            if(ws.gameValues.score > ws.gameValues.actualBest){
+                ws.gameValues.actualBest = ws.gameValues.score;
+            }
         }
     }
 }
 
 function moveMissiles(ws) {
     var i = 0;
-    for (i = 0; i < gameValues[ws].missiles.length; i++) {
-        gameValues[ws].missiles[i] -= 11;
-        if (gameValues[ws].missiles[i] < 0) gameValues[ws].missiles.splice(i, 1);
+    for (i = 0; i < ws.gameValues.missiles.length; i++) {
+        ws.gameValues.missiles[i] -= 11;
+        if (ws.gameValues.missiles[i] < 0) ws.gameValues.missiles.splice(i, 1);
     }
 }
 
 function moveAliens(ws) {
     var i = 0;
-    for (i = 0; i < gameValues[ws].aliens.length; i++) {
-        gameValues[ws].aliens[i] = gameValues[ws].aliens[i] + gameValues[ws].direction;
+    for (i = 0; i < ws.gameValues.aliens.length; i++) {
+        ws.gameValues.aliens[i] = ws.gameValues.aliens[i] + ws.gameValues.direction;
     }
-    return gameValues[ws].direction *= -1;
+    return ws.gameValues.direction *= -1;
 }
 function lowerAliens(ws) {
     var i = 0;
-    for (i = 0; i < gameValues[ws].aliens.length; i++) {
-        gameValues[ws].aliens[i] += 11;
+    for (i = 0; i < ws.gameValues.aliens.length; i++) {
+        ws.gameValues.aliens[i] += 11;
     }
 }
 
@@ -515,22 +579,24 @@ function updateGameState(ws){
         checkCollisionsMA(ws);
         if (a % 4 == 3) lowerAliens(ws);
         if (RaketaKolidujeSVotrelcom(ws)) {
-            for(i in gameValues[ws].intervals){
-                clearInterval(gameValues[ws].intervals[i]);
+            clearInterval(loop1);
+            clearInterval(loop2);
+            for(i in ws.gameValues.intervals){
+                clearInterval(ws.gameValues.intervals[i]);
             }
             content = {
-                "score": gameValues[ws].score,
-                "level": gameValues[ws].levelCounter
+                "score": ws.gameValues.score,
+                "level": ws.gameValues.levelCounter
             }
             ws.running = false;
-            gameValues[ws].missiles = [];
-            gameValues[ws].aliens = [1, 3, 5, 7, 9, 23, 25, 27, 29, 31];
-            gameValues[ws].ship = [104, 114, 115, 116];
-            gameValues[ws].direction = 1;
-            gameValues[ws].level = 1;
-            gameValues[ws].speed = 512;
-            gameValues[ws].score = 0;
-            gameValues[ws].levelCounter = 0;
+            ws.gameValues.missiles = [];
+            ws.gameValues.aliens = [1, 3, 5, 7, 9, 23, 25, 27, 29, 31];
+            ws.gameValues.ship = [104, 114, 115, 116];
+            ws.gameValues.direction = 1;
+            ws.gameValues.level = 1;
+            ws.gameValues.speed = 512;
+            ws.gameValues.score = 0;
+            ws.gameValues.levelCounter = 0;
             payLoad = {
                 "method": "looseScreen",
                 "content": content
@@ -539,17 +605,31 @@ function updateGameState(ws){
             for(i in ws.spectators){
                 ws.spectators[i].send(JSON.stringify(payLoad));
             }
+            // CAN BE IN FUNCTION
+            const index = activeGames.indexOf(ws.session);
+            activeGames.splice(index, 1);
+            payLoad = {
+                "method": "updateActives",
+                "content": activeGames
+            }
+            for(i in activeClients){
+                activeClients[i].send(JSON.stringify(payLoad));
+            }
+
         }
-        if (gameValues[ws].aliens.length === 0){
+        if (ws.gameValues.aliens.length === 0){
             ws.running = false;
             clearInterval(loop1);
             clearInterval(loop2);
-            gameValues[ws].missiles = [];
-            gameValues[ws].ship = [104, 114, 115, 116];
-            gameValues[ws].direction = 1;
+            for(i in ws.gameValues.intervals){
+                clearInterval(ws.gameValues.intervals[i]);
+            }
+            ws.gameValues.missiles = [];
+            ws.gameValues.ship = [104, 114, 115, 116];
+            ws.gameValues.direction = 1;
             content = {
-                "score": gameValues[ws].score,
-                "level": gameValues[ws].levelCounter
+                "score": ws.gameValues.score,
+                "level": ws.gameValues.levelCounter
             }
             payLoad = {
                 "method": "winScreen",
@@ -564,16 +644,17 @@ function updateGameState(ws){
             }, 1000);
         }
         a++;
-    }, gameValues[ws].speed);
-    gameValues[ws].intervals.push(loop1);
+    }, ws.gameValues.speed);
+    ws.gameValues.intervals.push(loop1);
 
     var loop2 = setInterval(function () {
         content = {
-            "aliens": gameValues[ws].aliens,
-            "missiles": gameValues[ws].missiles,
-            "ship": gameValues[ws].ship,
-            "score": gameValues[ws].score,
-            "level": gameValues[ws].levelCounter
+            "aliens": ws.gameValues.aliens,
+            "missiles": ws.gameValues.missiles,
+            "ship": ws.gameValues.ship,
+            "score": ws.gameValues.score,
+            "actualBest": ws.gameValues.actualBest,
+            "level": ws.gameValues.levelCounter
         }
         payLoad = {
             "method": "updateScene",
@@ -583,8 +664,8 @@ function updateGameState(ws){
         for(i in ws.spectators){
             ws.spectators[i].send(JSON.stringify(payLoad));
         }
-    }, 100);
-    gameValues[ws].intervals.push(loop2);
+    }, 41);
+    ws.gameValues.intervals.push(loop2);
 
     return [loop1,loop2];
 }

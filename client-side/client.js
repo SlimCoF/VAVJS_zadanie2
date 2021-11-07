@@ -102,11 +102,16 @@ const page =
                         [
                             {
                                 "element": "input",
+                                "id": "secondPassword",
+                                "style": inputStyle,
+                                "placeholder": "password again"
+                            },
+                            {
+                                "element": "input",
                                 "id": "emailInput",
                                 "style": inputStyle,
                                 "placeholder": "e-mail"
                             },
-
                             {
                                 "element": "input",
                                 "id": "fullNameInput",
@@ -280,7 +285,20 @@ const page =
     },
     {
         "element": "div",
-        "style": "width: 450px; height: 234px; text-align:center; float : left; margin-left: 10px;" + backgroundStyle,
+        "id": "activeListDiv",
+        "style": "width: 450px; height: 234px; text-align:center; float : left; margin-left: 10px; overflow-y:auto;" + backgroundStyle,
+        "children":
+        [
+            {
+                "element": "h3",
+                "innerHTML": "Active Games",
+                "style": "margin: 5px; font-family: Fantasy;"
+            },
+            {
+                "element": "ul",
+                "id": "activeList"
+            }
+        ]
     }
 ]
 // copyright: https://vectorpixelstar.itch.io/space
@@ -317,7 +335,6 @@ function initSpace(){
             counter++;
         }
     }
-    console.log("SPACE IS INITED");
 }
 initSpace();
 
@@ -334,7 +351,7 @@ let session = -1;
 socket.addEventListener('message', (msg) => {
     var json = JSON.parse(msg.data);
 
-    // Registration response handle
+    // Registration response
     if(json.method === "registrationFailed"){
         alert(json.content);
     }else if(json.method === "registrationSucess"){
@@ -348,7 +365,7 @@ socket.addEventListener('message', (msg) => {
 
         console.log("Registration sucessfull!!");
 
-    // Login response handle
+    // Login response
     }else if(json.method === "loginFailed"){
         alert(json.content);
     }else if(json.method === "loginSucess"){
@@ -382,24 +399,18 @@ socket.addEventListener('message', (msg) => {
         adminTableCreate(adminDiv, json.content.users);
 
         console.log("Logged In as Admin");
-    }
-
-    // Start response handle
-    else if(json.method === "startFail"){
-        alert(json.content);
-    }
-    else if(json.method === "startSucess"){
-        ctx.clearRect(0, 0, 528, 528);
-        var ship = json.content.ship;
-        for (var i = 0; i < ship.length; i++) {
-            var spaceShipOBJ = map.find(spaceShip => spaceShip.id === ship[i]);
-            var x = spaceShipOBJ.x;
-            var y = spaceShipOBJ.y;
-            ctx.drawImage(spaceShip, x, y, 48, 48);
-        }
-        console.log("YOU ARE PLAYING!");
     
-    // Restart response handle
+
+    // Start response
+    }else if(json.method === "startFail"){
+        alert(json.content);
+    
+
+    // Update actives response
+    }else if(json.method === "updateActives"){
+        updateList(json.content);
+    
+    // Restart response
     }else if(json.method === "restartFail"){
         alert(json.content);
     }else if(json.method === "restartSucess"){
@@ -408,15 +419,16 @@ socket.addEventListener('message', (msg) => {
             ctx.clearRect(0, 0, 528, 528);
         }, 1000);
 
-    // Spectate response handle
+    // Spectate response
     }else if(json.method === "spectateFail"){
-        alert(json.content);
+        alert(json.content.error);
     }else if(json.method === "spectateSucess"){
         if(json.content.status === "online"){
             session = json.content.session;
             statusSpan = document.getElementById("statusSpan");
             statusSpan.innerHTML = "spectate";
             statusSpan.style.color = "blue";
+            ctx.clearRect(0, 0, 528, 528);
         }else{
             session = json.content.session;
             statusSpan = document.getElementById("statusSpan");
@@ -426,17 +438,19 @@ socket.addEventListener('message', (msg) => {
 
         console.log(json.content);
 
-    // Update game state handle
+    // Update game state
     }else if(json.method === "updateScene"){
         ctx.clearRect(0, 0, 528, 432);
 
         // Draw score and level
         var score = json.content.score;
         var level = json.content.level;
-        ctx.font = "20px Arial";
-        ctx.fillText("Score: " + score, 5, 20);
-        ctx.fillText("Level: " + level, 5, 41);
+        var actualBest = json.content.actualBest;
 
+        ctx.font = "20px Arial";
+        ctx.fillText("Actual Best: " + actualBest, 5, 20);
+        ctx.fillText("Score: " + score, 5, 41);
+        ctx.fillText("Level: " + level, 5, 61);
 
         // Draw aliens
         var aliens = json.content.aliens;
@@ -488,6 +502,25 @@ socket.addEventListener('message', (msg) => {
         ctx.font = "20px Arial";
         ctx.clearRect(0, 0, 528, 528);
         ctx.fillText("YOU WIN\nLevel: " + level + " Score: " + score, 200, 200);
+    
+
+    // Spectated close
+    }else if (json.method === "spectatedClose"){
+        if(json.content.status === "online"){
+            statusSpan = document.getElementById("statusSpan");
+            statusSpan.innerHTML = "online";
+            statusSpan.style.color = "green";
+        }else if(json.content.status === "offline"){
+            statusSpan = document.getElementById("statusSpan");
+            statusSpan.innerHTML = "offline";
+            statusSpan.style.color = "red";
+        }
+        ctx.clearRect(0, 0, 528, 528);
+        ctx.font = "20px Arial";
+        ctx.fillText("Spectated client left!!", 200, 200)
+        setTimeout(function() {
+            ctx.clearRect(0, 0, 528, 528);
+        }, 1000);
     }
 });
 
@@ -497,7 +530,7 @@ passwordInput = document.getElementById('passwordInput');
 emailInput = document.getElementById('emailInput');
 fullNameInput = document.getElementById('fullNameInput');
 spectateInput = document.getElementById('spectateInput');
-
+secondPasswordInput = document.getElementById('secondPassword');
 // ALL BUTTONS
 // Register button (sending register infromation)
 registerButton = document.getElementById('registerButton');
@@ -505,6 +538,7 @@ registerButton.addEventListener('click', () => {
     const content = {
         "username": usernameInput.value,
         "password": passwordInput.value,
+        "secondPassword": secondPasswordInput.value,
         "email": emailInput.value,
         "name": fullNameInput.value,
     };
@@ -693,3 +727,22 @@ function adminTableCreate(place, users) {
         tbody.appendChild(row);
     }
   }
+
+
+function updateList(sessions){
+    var ul = document.getElementById('activeList');
+    ul.remove();
+
+    var listDiv = document.getElementById('activeListDiv')
+    ul = document.createElement('ul');
+    ul.id = 'activeList'
+    listDiv.appendChild(ul);
+
+    sessions.forEach(element => {
+        var li = document.createElement('li');
+        li.innerHTML = 'session: ' + element;
+        ul.appendChild(li);
+    });
+    
+    // console.log("active games:" + session);
+}
