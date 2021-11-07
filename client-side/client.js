@@ -59,7 +59,18 @@ const page =
             ::placeholder {\
                 color: #5b1c7d;\
                 opacity: 1;\
-            }"
+            }\
+            .shipImg{\
+                transition-duration: 0.4s;\
+                width: 100px; \
+                height: 100px; \
+                opacity: 0.7; \
+            }\
+            .shipImg:hover {\
+                width: 110px;\
+                height: 110px;\
+            }\
+            "
     },
     {
         "element": "div",
@@ -285,18 +296,97 @@ const page =
     },
     {
         "element": "div",
-        "id": "activeListDiv",
-        "style": "width: 450px; height: 234px; text-align:center; float : left; margin-left: 10px; overflow-y:auto;" + backgroundStyle,
+        "style": "width: 450px; height: 234px; float : left; margin-left: 10px;" + backgroundStyle,
         "children":
         [
             {
-                "element": "h3",
-                "innerHTML": "Active Games",
-                "style": "margin: 5px; font-family: Fantasy;"
+                "element": "div",
+                "id": "activeListDiv",
+                "style": "background-color: #c182e3; height: 224px; width: 150px; overflow-y:auto; box-shadow: inset 0 0 5px #000000; float: left",
+                "children":
+                [
+                    {
+                        "element": "h3",
+                        "innerHTML": "Active Games",
+                        "style": "margin-left: 20px; font-family: Fantasy;"
+                    },
+                    {
+                        "element": "ul",
+                        "id": "activeList"
+                    }
+                ]
             },
             {
-                "element": "ul",
-                "id": "activeList"
+                "element": "div",
+                "id": "activeListDiv",
+                "style": "height: 110px; margin-left: 180px;",
+                "children":
+                [
+                    {
+                        "element": "div",
+                        "id": "starship1",
+                        "style": "float: left; width: 110px",
+                        "children": 
+                        [
+                            {
+                                "element": "img",
+                                "class": "shipImg",
+                                // Copytight: https://www.flaticon.com/free-icon/space-ship_1970155
+                                "src": "https://cdn-icons-png.flaticon.com/512/1970/1970155.png",
+                            }
+                        ]
+                    },
+                    {
+                        "element": "div",
+                        "id": "starship2",
+                        "style": "margin-left: 20px; float: left; width: 110px",
+                        "children": 
+                        [
+                            {
+                                "element": "img",
+                                "class": "shipImg",
+                                //Copyright: https://www.flaticon.com/free-icon/space-ship_1789873
+                                "src": "https://cdn-icons-png.flaticon.com/512/1789/1789873.png",
+                            }
+                        ]
+                    },
+                ]
+            },
+            {
+                "element": "div",
+                "id": "activeListDiv",
+                "style": "margin-left: 180px; margin-top: 5px",
+                "children":
+                [
+                    {
+                        "element": "div",
+                        "id": "starship3",
+                        "style": "margin-top:10px; float: left; width: 110px",
+                        "children": 
+                        [
+                            {
+                                "element": "img",
+                                "class": "shipImg",
+                                //Copyright: https://www.flaticon.com/free-icon/spaceship_1114780
+                                "src": "https://cdn-icons-png.flaticon.com/512/1114/1114780.png",
+                            }
+                        ]
+                    },
+                    {
+                        "element": "div",
+                        "id": "starship4",
+                        "style": "margin-left: 20px; float: left; width: 110px",
+                        "children": 
+                        [
+                            {
+                                "element": "img",
+                                "class": "shipImg",
+                                //Copyright: https://www.flaticon.com/free-icon/rocket_3204744
+                                "src": "https://cdn-icons-png.flaticon.com/512/3204/3204744.png",
+                            }
+                        ]
+                    }
+                ]
             }
         ]
     }
@@ -400,11 +490,9 @@ socket.addEventListener('message', (msg) => {
 
         console.log("Logged In as Admin");
     
-
     // Start response
     }else if(json.method === "startFail"){
         alert(json.content);
-    
 
     // Update actives response
     }else if(json.method === "updateActives"){
@@ -445,7 +533,7 @@ socket.addEventListener('message', (msg) => {
         // Draw score and level
         var score = json.content.score;
         var level = json.content.level;
-        var actualBest = json.content.actualBest;
+        var actualBest = json.content.bestScore;
 
         ctx.font = "20px Arial";
         ctx.fillText("Actual Best: " + actualBest, 5, 20);
@@ -506,21 +594,30 @@ socket.addEventListener('message', (msg) => {
 
     // Spectated close
     }else if (json.method === "spectatedClose"){
-        if(json.content.status === "online"){
-            statusSpan = document.getElementById("statusSpan");
-            statusSpan.innerHTML = "online";
-            statusSpan.style.color = "green";
-        }else if(json.content.status === "offline"){
-            statusSpan = document.getElementById("statusSpan");
-            statusSpan.innerHTML = "offline";
-            statusSpan.style.color = "red";
-        }
+        statusSpan = document.getElementById("statusSpan");
+        statusSpan.innerHTML = "online";
+        statusSpan.style.color = "green";
+        
         ctx.clearRect(0, 0, 528, 528);
         ctx.font = "20px Arial";
         ctx.fillText("Spectated client left!!", 200, 200)
         setTimeout(function() {
             ctx.clearRect(0, 0, 528, 528);
         }, 1000);
+    }
+
+    // Change ship
+    else if(json.method === "changeShip"){
+        console.log("CHANGE SHIP: " + json.content);
+        if(json.content === 1){
+            spaceShip.src = "https://cdn-icons-png.flaticon.com/512/1970/1970155.png";
+        }else if(json.content === 2){
+            spaceShip.src = "https://cdn-icons-png.flaticon.com/512/1789/1789873.png";
+        }else if(json.content === 3){
+            spaceShip.src = "https://cdn-icons-png.flaticon.com/512/1114/1114780.png";
+        }else if(json.content === 4){
+            spaceShip.src = "https://cdn-icons-png.flaticon.com/512/3204/3204744.png";
+        }
     }
 });
 
@@ -704,15 +801,19 @@ function adminTableCreate(place, users) {
     heading_2.innerHTML = "e-mail";
     let heading_3 = document.createElement('th');
     heading_3.innerHTML = "Full name";
+    let heading_4 = document.createElement('th');
+    heading_4.innerHTML = "TOP Score";
+    let heading_5 = document.createElement('th');
+    heading_5.innerHTML = "TOP Level";
 
     row.appendChild(heading_1);
     row.appendChild(heading_2);
     row.appendChild(heading_3);
+    row.appendChild(heading_4);
+    row.appendChild(heading_5);
     thead.appendChild(row);
 
     for(i in users){
-        // console.log(users[i]);
-
         let row = document.createElement('tr');
         let data_1 = document.createElement('td');
         data_1.innerHTML = users[i].username;
@@ -720,10 +821,16 @@ function adminTableCreate(place, users) {
         data_2.innerHTML = users[i].email;
         let data_3 = document.createElement('td');
         data_3.innerHTML = users[i].name;
+        let data_4 = document.createElement('td');
+        data_4.innerHTML = users[i].score;
+        let data_5 = document.createElement('td');
+        data_5.innerHTML = users[i].level;
 
         row.appendChild(data_1);
         row.appendChild(data_2);
         row.appendChild(data_3);
+        row.appendChild(data_4);
+        row.appendChild(data_5);
         tbody.appendChild(row);
     }
   }
@@ -746,3 +853,36 @@ function updateList(sessions){
     
     // console.log("active games:" + session);
 }
+
+starship1 = document.getElementById('starship1');
+starship1.addEventListener('click', () => {
+    const payLoad = {
+        "method": "changeShip",
+        "content": 1
+    }
+    socket.send(JSON.stringify(payLoad));
+});
+starship2 = document.getElementById('starship2');
+starship2.addEventListener('click', () => {
+    const payLoad = {
+        "method": "changeShip",
+        "content": 2
+    }
+    socket.send(JSON.stringify(payLoad));
+});
+starship3 = document.getElementById('starship3');
+starship3.addEventListener('click', () => {
+    const payLoad = {
+        "method": "changeShip",
+        "content": 3
+    }
+    socket.send(JSON.stringify(payLoad));
+});
+starship4 = document.getElementById('starship4');
+starship4.addEventListener('click', () => {
+    const payLoad = {
+        "method": "changeShip",
+        "content": 4
+    }
+    socket.send(JSON.stringify(payLoad));
+});

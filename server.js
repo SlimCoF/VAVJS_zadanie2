@@ -1,12 +1,9 @@
 var path = require('path');
-// const http = require('http');
 const webSocket = require('ws');
 const express = require('express');
 const crypto = require('crypto');
 const fs = require("fs");
 var gameLogic = require('./gameLogic.js');
-const { stringify } = require('querystring');
-const { WSAEAFNOSUPPORT } = require('constants');
 
 // load CSV containing client information
 var file = fs.readFileSync("profiles.csv", "utf8");
@@ -16,15 +13,16 @@ for (let i of fileData){
     tmp = i.split(";");
     if (tmp[0] !== ''){
         clientsData.push({
-                // "session": tmp[0],
                 "username": tmp[0],
                 "password": tmp[1],
                 "email": tmp[2],
-                "name": tmp[3]
+                "name": tmp[3],
+                "score": tmp[4],
+                "level": tmp[5]
         });
     }
 }
-// console.log(clientsData);
+
 // all active clients {session: connection}
 activeClients = {};
 activeGames = [];
@@ -48,36 +46,28 @@ wsServer.on('connection', (ws) => {
     ws.spectators = [];
     ws.session = -1;
     ws.gameValues = {
+        'a': 0,
         'ship': [104, 114, 115, 116],
         'aliens': [1, 3, 5, 7, 9, 23, 25, 27, 29, 31],
         'missiles': [],
         'direction': 1,
         'level': 1,
+        'bestLevel': 1,
         'speed': 512,
         'intervals': [],
         'score': 0,
-        'actualBest': 0,
+        'bestScore': 0,
         'levelCounter': 1,
     }
 
     ws.on('open', () => console.log("opened!"));
-    ws.on('close', (e) => {
+    ws.on('close', () => {
         // If client turn off the fame remove him from activeClients.
         delete activeClients[ws.session];
         console.log("closed!");
 
         if(ws.running === true){
-            
-            // CAN BE IN FUNCTION
-            const index = activeGames.indexOf(ws.session);
-            activeGames.splice(index, 1);
-            payLoad = {
-                "method": "updateActives",
-                "content": activeGames
-            }
-            for(i in activeClients){
-                activeClients[i].send(JSON.stringify(payLoad));
-            }
+            editActiveGames(false, ws);
         }
 
         // Clear all intervlas
@@ -87,27 +77,44 @@ wsServer.on('connection', (ws) => {
             }
         }
 
-        // If client was spectator remove him from another clients spectator list
+        // If client was spectator remove him from spectaded client spectator list
         if(ws.spectate !== false){
             const index = ws.spectate.spectators.indexOf(ws);
             ws.spectate.spectators.splice(index, 1);
             ws.spectate = false;
         }
 
-        // TODO: Announce all client spectators, if any, about closing
+        // Announce all client spectators, if any, about closing
         for(i in ws.spectators){
-            const content = {};
             ws.spectators[i].spectate = false;
-            if(isActive(ws.spectators[i])){
-                content["status"] = "online";  
-            }else{
-                content["status"] = "offline";
-            }
             const payLoad = {
                 "method": "spectatedClose",
-                "content": content
             }
-            ws.spectators[i].send(JSON.stringify(payLoad));
+            if(ws.spectators !== undefined){
+                ws.spectators[i].send(JSON.stringify(payLoad));
+            }
+        }
+
+        // Write score to CSV
+        if(ws.gameValues.bestScore !== 0){
+            var data = "";
+            var isBigger = false;
+            clientsData.forEach(element => {
+                if(element.username === ws.username){
+                    if(element.score < ws.gameValues.bestScore){
+                        element.score = ws.gameValues.bestScore;
+                        isBigger = true;
+                    }
+                    if(element.level < ws.gameValues.bestLevel){
+                        element.level = ws.gameValues.bestLevel;
+                        isBigger = true;
+                    }
+                }
+                data += element.username + ";" + element.password + ";" + element.email + ";" + element.name + ";" + element.score + ";" + element.level + ";\r\n";
+            });
+            if(isBigger){
+                fs.writeFileSync("profiles.csv", data);
+            }
         }
     });
     ws.on('message', (msg) => {
@@ -201,7 +208,7 @@ wsServer.on('connection', (ws) => {
                 }
             }
             ws.send(JSON.stringify(payLoad));
-            if(errorMessage !== ""){
+            if(payLoad.method !== "loginFailed"){
                 payLoad = {
                     "method": "updateActives",
                     "content": activeGames
@@ -219,16 +226,8 @@ wsServer.on('connection', (ws) => {
                 }
                 ws.send(JSON.stringify(payLoad));
             }else{
-                activeGames.push(ws.session);
-                payLoad = {
-                    "method": "updateActives",
-                    "content": activeGames
-                }
-
+                editActiveGames(true, ws);
                 updateGameState(ws);
-                for(i in activeClients){
-                    activeClients[i].send(JSON.stringify(payLoad));
-                }
             }
         }
 
@@ -241,15 +240,17 @@ wsServer.on('connection', (ws) => {
 
                 // Set gameValues to initial
                 ws.gameValues =  {
+                    'a': 0,
                     'ship': [104, 114, 115, 116],
                     'aliens': [1, 3, 5, 7, 9, 23, 25, 27, 29, 31],
                     'missiles': [],
                     'direction': 1,
                     'level': 1,
+                    'bestLevel': ws.gameValues.bestLevel,
                     'speed': 512,
                     'intervals': [],
                     'score': 0,
-                    'actualBest': ws.gameValues.actualBest,
+                    'bestScore': ws.gameValues.bestScore,
                     'levelCounter': 1,
                 }
                 ws.running = false;
@@ -267,16 +268,8 @@ wsServer.on('connection', (ws) => {
                 ws.spectators[i].send(JSON.stringify(payLoad));
             }
 
-            // CAN BE IN FUNCTION
-            const index = activeGames.indexOf(ws.session);
-            activeGames.splice(index, 1);
-            payLoad = {
-                "method": "updateActives",
-                "content": activeGames
-            }
-            for(i in activeClients){
-                activeClients[i].send(JSON.stringify(payLoad));
-            }
+            editActiveGames(false, ws);
+
         }
 
         // User pressed key
@@ -287,14 +280,16 @@ wsServer.on('connection', (ws) => {
             if(ws.spectate !== false){
                 wsConn = ws.spectate
             }
-            controllShp(wsConn, key)
+            gameLogic.controlShip(wsConn, key);
         }
 
         // User wants to spectate someone or end spectation
         else if(json.method === "spectate" && ws.running !== true){
             var errorMessage = "";
             var content = {};
-            if(ws.spectate === false){
+            if(ws.username === undefined){
+                errorMessage = "You are offline!!";
+            }else if(ws.spectate === false){
                 errorMessage = "Session (" + json.content.session + ") doesn't exist";
                 for(i in activeClients){
                     if(json.content.session == activeClients[i].session){
@@ -330,19 +325,19 @@ wsServer.on('connection', (ws) => {
                 }
             }
             ws.send(JSON.stringify(payLoad));
-        } 
+        }
+        else if(json.method === "changeShip" && ws.spectate === false && ws.session !== -1){
+            payLoad = {
+                "method": "changeShip",
+                "content": json.content
+            }
+            ws.send(JSON.stringify(payLoad));
+            for(i in ws.spectators){
+                ws.spectators[i].send(JSON.stringify(payLoad));
+            }
+        }
     });
 });
-
-
-
-
-
-
-
-
-
-
 
 // PAGE LOGIC
 // Adding user to file and to clientsData
@@ -350,37 +345,29 @@ function addUser(json){
     // Create hash from users password
     json.password = crypto.createHash('md5').update(json.password ).digest('hex');
 
-    // const session = clientsData.length;
     // Add user to clientsData
     clientsData.push({
         // "session": session,
         "username": json.username,
         "password": json.password,
         "email": json.email,
-        "name": json.name
+        "name": json.name,
+        "score": "0",
+        "level": "1"
     });
-    // console.log(clientsData.length);
 
     // Add user to CSV table
-    const row = json.username + ";" + json.password + ";" + json.email + ";" + json.name + "0;0;\r\n";
+    const row = json.username + ";" + json.password + ";" + json.email + ";" + json.name + ";0;0;\r\n";
     fs.appendFileSync("profiles.csv", row, (err) => {
         if (err)
             console.log(err);
-        else {
-            console.log("File written successfully");
-            console.log("The written has the following contents:");
-            console.log(fs.readFileSync("profiles.csv", "utf8"));
-        }
     });
-    // return sessionn;
 }
 
-
-// Checking conditions of register parameters
+// Checking conditions of registration parameters
 function notFilled(json){
     var errorString = "";
     for(i in json){
-        // if(json[i] == "" && i !== "session"){
         if(json[i] == ""){
             errorString += "- " +i + " field is not filled!\n"
         }
@@ -480,36 +467,31 @@ function isActive(json){
     return false;
 }
 
-
-
-
-
-
-
-
-
-// GAME LOGIC
-function controllShp(wsConn, key){
-    if([37, 71, 39, 74].includes(key)){
-        // Move ship left (<-, G)
-        if([37, 71].includes(key) && wsConn.gameValues.ship[0] > 100){
-            for (i = 0; i < wsConn.gameValues.ship.length; i++) {
-                wsConn.gameValues.ship[i]--;
-            }
+// Edit active game tables
+function editActiveGames(add, ws){
+    const payload = {};
+    if(add){
+        activeGames.push(ws.session);
+        payLoad = {
+            "method": "updateActives",
+            "content": activeGames
         }
-        // Move ship right (->, J)
-        else if([39, 74].includes(key) && wsConn.gameValues.ship[0] < 108){
-            for (i = 0; i < wsConn.gameValues.ship.length; i++) {
-                wsConn.gameValues.ship[i]++;
-            }
+    }else{
+        const index = activeGames.indexOf(ws.session);
+        activeGames.splice(index, 1);
+        payLoad = {
+            "method": "updateActives",
+            "content": activeGames
         }
-    }else if(key === 32){
-        wsConn.gameValues.missiles.push(wsConn.gameValues.ship[0] - 11);
+    }
+    for(i in activeClients){
+        activeClients[i].send(JSON.stringify(payLoad));
     }
 }
+
+// Next level
 function nextLevel(ws) {
     ws.gameValues.level++;
-    console.log('level: ' + ws.gameValues.level);
     if (ws.gameValues.level == 1) ws.gameValues.aliens = [1, 3, 5, 7, 9, 23, 25, 27, 29, 31];
     if (ws.gameValues.level == 2) ws.gameValues.aliens = [1, 3, 5, 7, 9, 13, 15, 17, 19, 23, 25, 27, 29, 31];
     if (ws.gameValues.level == 3) ws.gameValues.aliens = [1, 5, 9, 23, 27, 31];
@@ -520,65 +502,21 @@ function nextLevel(ws) {
         ws.gameValues.speed = ws.gameValues.speed / 2;
     }
     ws.gameValues.levelCounter++;
+    if(ws.gameValues.levelCounter > ws.gameValues.bestLevel){
+        ws.gameValues.bestLevel = ws.gameValues.levelCounter;
+    }
     updateGameState(ws);
 }
 
-function RaketaKolidujeSVotrelcom(ws) {
-    for (var i = 0; i < ws.gameValues.aliens.length; i++) {
-        if (ws.gameValues.aliens[i] > 98) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function checkCollisionsMA(ws) {
-    for (var i = 0; i < ws.gameValues.missiles.length; i++) {
-        if (ws.gameValues.aliens.includes(ws.gameValues.missiles[i])) {
-            var alienIndex = ws.gameValues.aliens.indexOf(ws.gameValues.missiles[i]);
-            ws.gameValues.aliens.splice(alienIndex, 1);
-            ws.gameValues.missiles.splice(i, 1);
-            ws.gameValues.score += 10;
-            if(ws.gameValues.score > ws.gameValues.actualBest){
-                ws.gameValues.actualBest = ws.gameValues.score;
-            }
-        }
-    }
-}
-
-function moveMissiles(ws) {
-    var i = 0;
-    for (i = 0; i < ws.gameValues.missiles.length; i++) {
-        ws.gameValues.missiles[i] -= 11;
-        if (ws.gameValues.missiles[i] < 0) ws.gameValues.missiles.splice(i, 1);
-    }
-}
-
-function moveAliens(ws) {
-    var i = 0;
-    for (i = 0; i < ws.gameValues.aliens.length; i++) {
-        ws.gameValues.aliens[i] = ws.gameValues.aliens[i] + ws.gameValues.direction;
-    }
-    return ws.gameValues.direction *= -1;
-}
-function lowerAliens(ws) {
-    var i = 0;
-    for (i = 0; i < ws.gameValues.aliens.length; i++) {
-        ws.gameValues.aliens[i] += 11;
-    }
-}
-
-// Game loop
-var a = 0;
-
+// GAME LOOP
 function updateGameState(ws){
     ws.running = true;
     var loop1 = setInterval(function () {
-        moveAliens(ws);
-        moveMissiles(ws);
-        checkCollisionsMA(ws);
-        if (a % 4 == 3) lowerAliens(ws);
-        if (RaketaKolidujeSVotrelcom(ws)) {
+        gameLogic.moveAliens(ws);
+        gameLogic.moveMissiles(ws);
+        gameLogic.checkCollisionsMA(ws);
+        if (ws.gameValues.a % 4 == 3) gameLogic.lowerAliens(ws);
+        if (gameLogic.RaketaKolidujeSVotrelcom(ws)) {
             clearInterval(loop1);
             clearInterval(loop2);
             for(i in ws.gameValues.intervals){
@@ -589,6 +527,7 @@ function updateGameState(ws){
                 "level": ws.gameValues.levelCounter
             }
             ws.running = false;
+            ws.gameValues.a = 0;
             ws.gameValues.missiles = [];
             ws.gameValues.aliens = [1, 3, 5, 7, 9, 23, 25, 27, 29, 31];
             ws.gameValues.ship = [104, 114, 115, 116];
@@ -605,16 +544,7 @@ function updateGameState(ws){
             for(i in ws.spectators){
                 ws.spectators[i].send(JSON.stringify(payLoad));
             }
-            // CAN BE IN FUNCTION
-            const index = activeGames.indexOf(ws.session);
-            activeGames.splice(index, 1);
-            payLoad = {
-                "method": "updateActives",
-                "content": activeGames
-            }
-            for(i in activeClients){
-                activeClients[i].send(JSON.stringify(payLoad));
-            }
+            editActiveGames(false, ws);
 
         }
         if (ws.gameValues.aliens.length === 0){
@@ -643,7 +573,7 @@ function updateGameState(ws){
                 nextLevel(ws);
             }, 1000);
         }
-        a++;
+        ws.gameValues.a++;
     }, ws.gameValues.speed);
     ws.gameValues.intervals.push(loop1);
 
@@ -653,7 +583,7 @@ function updateGameState(ws){
             "missiles": ws.gameValues.missiles,
             "ship": ws.gameValues.ship,
             "score": ws.gameValues.score,
-            "actualBest": ws.gameValues.actualBest,
+            "bestScore": ws.gameValues.bestScore,
             "level": ws.gameValues.levelCounter
         }
         payLoad = {
