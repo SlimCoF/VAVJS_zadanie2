@@ -64,12 +64,25 @@ const page =
                 transition-duration: 0.4s;\
                 width: 100px; \
                 height: 100px; \
-                opacity: 0.7; \
+                opacity: 0.6; \
             }\
             .shipImg:hover {\
                 width: 110px;\
                 height: 110px;\
+                opacity: 1; \
             }\
+            .bckImg{\
+                transition-duration: 0.4s;\
+                width: 80px; \
+                height: 80px; \
+                opacity: 0.6; \
+            }\
+            .bckImg:hover {\
+                width: 88px;\
+                height: 88px;\
+                opacity: 1; \
+            }\
+            \
             "
     },
     {
@@ -157,7 +170,7 @@ const page =
             },
             {
                 "element": "div",
-                "style": backgroundStyle,
+                "style": backgroundStyle + "height: 80px;",
                 "children":
                 [
                     {
@@ -212,7 +225,7 @@ const page =
                     },
                     {
                         "element": "div",
-                        "style": "margin-left: 350px",
+                        "style": "margin-left: 30px; float: left;",
                         "children":
                         [
                             {
@@ -239,6 +252,19 @@ const page =
                                         "innerHTML": "-",
                                     }
                                 ]
+                            }
+                        ]
+                    },
+                    {
+                        "element": "div",
+                        "id": "bckImg",
+                        "style": "margin-left:50px; float: left; width: 110px",
+                        "children": 
+                        [
+                            {
+                                "element": "img",
+                                "class": "bckImg",
+                                "src": "https://cdn-icons-png.flaticon.com/512/2909/2909506.png",
                             }
                         ]
                     }
@@ -399,7 +425,6 @@ createElementsFromJSON(page, document.body);
 ctx = document.getElementById('gameCanvas').getContext("2d");
 ctx.fillStyle = "White";
 ctx.font = "50px Arial";
-ctx.fontColor = "White";
 
 // Copyright: https://www.flaticon.com/free-icon/alien_3306625
 alien = document.createElement("img");
@@ -407,14 +432,28 @@ alien.src = "https://cdn-icons-png.flaticon.com/512/3306/3306625.png";
 // Copytight: https://www.flaticon.com/free-icon/space-ship_1970155
 spaceShip = document.createElement("img");
 spaceShip.src = "https://cdn-icons-png.flaticon.com/512/1970/1970155.png";
-// Copyright: https://www.flaticon.com/free-icon/missile_1261875
+//Copyright: https://www.flaticon.com/free-icon/missile_1261986?term=missile&page=1&position=61&page=1&position=61&related_id=1261986&origin=search
 missile = document.createElement("img");
-missile.src = "https://cdn-icons-png.flaticon.com/512/1261/1261875.png";
+missile.src = "https://cdn-icons-png.flaticon.com/512/1261/1261986.png";
+// Copyright: https://www.flaticon.com/free-icon/universe_2909506?related_id=2909458&origin=search
+space = document.createElement("img");
+space.src = "https://cdn-icons-png.flaticon.com/512/2909/2909506.png";
+// https://www.vecteezy.com/vector-art/2267289-level-up-neon-signs-style-text-vector
+win = document.createElement("img");
+win.src = "https://static.vecteezy.com/system/resources/previews/002/267/289/non_2x/level-up-neon-signs-style-text-free-vector.jpg";
+win.width = "528px";
+win.height = "528px";
+// https://www.vecteezy.com/vector-art/2241291-game-over-neon-signs-style-text-vector
+loose = document.createElement("img");
+loose.src = "https://static.vecteezy.com/system/resources/previews/002/241/291/non_2x/game-over-neon-signs-style-text-free-vector.jpg"
+loose.width = "528px";
+loose.height = "528px";
 
-let audio = document.createElement("audio");
+var audio = document.createElement("audio");
 // Copyright: https://www.chosic.com/download-audio/28670/
 audio.src = "https://www.chosic.com/wp-content/uploads/2021/08/Loyalty_Freak_Music_-_04_-_It_feels_good_to_be_alive_too.mp3";
 
+var backgroundImg = false;
 const map = [{}];
 
 function initSpace(){
@@ -453,7 +492,8 @@ socket.addEventListener('message', (msg) => {
         sessionSpan = document.getElementById("sessionSpan");
         sessionSpan.innerHTML = session;
 
-        console.log("Registration sucessfull!!");
+        clearScene();
+        drawShip(json);
 
     // Login response
     }else if(json.method === "loginFailed"){
@@ -467,7 +507,8 @@ socket.addEventListener('message', (msg) => {
         sessionSpan = document.getElementById("sessionSpan");
         sessionSpan.innerHTML = session;
         
-        console.log("Logged In");
+        clearScene();
+        drawShip(json);
     }else if(json.method === "loginAdmin"){
         session = json.content.session;
         statusSpan = document.getElementById("statusSpan");
@@ -488,7 +529,8 @@ socket.addEventListener('message', (msg) => {
 
         adminTableCreate(adminDiv, json.content.users);
 
-        console.log("Logged In as Admin");
+        clearScene();
+        drawShip(json);
     
     // Start response
     }else if(json.method === "startFail"){
@@ -505,8 +547,9 @@ socket.addEventListener('message', (msg) => {
         ctx.fillText("Game was restarted", 200, 200)
         setTimeout(function() {
             ctx.clearRect(0, 0, 528, 528);
+            clearScene();
+            drawShip(json);
         }, 1000);
-
     // Spectate response
     }else if(json.method === "spectateFail"){
         alert(json.content.error);
@@ -528,69 +571,54 @@ socket.addEventListener('message', (msg) => {
 
     // Update game state
     }else if(json.method === "updateScene"){
-        ctx.clearRect(0, 0, 528, 432);
+        // clear scene before drawing
+        clearScene(json);
+        drawScore(json);
+        drawAliens(json);
+        drawMissiles(json);
+        drawShip(json);
 
-        // Draw score and level
-        var score = json.content.score;
-        var level = json.content.level;
-        var actualBest = json.content.bestScore;
-
-        ctx.font = "20px Arial";
-        ctx.fillText("Actual Best: " + actualBest, 5, 20);
-        ctx.fillText("Score: " + score, 5, 41);
-        ctx.fillText("Level: " + level, 5, 61);
-
-        // Draw aliens
-        var aliens = json.content.aliens;
-        for (var i = 0; i < aliens.length; i++) {
-            var alienOBJ = map.find(alien => alien.id === aliens[i]);
-            var x = alienOBJ.x;
-            var y = alienOBJ.y;
-            ctx.drawImage(alien, x, y, 48, 48);
-        }
-
-        // Draw missiles
-        var missiles = json.content.missiles
-        for (var i = 0; i < missiles.length; i++) {
-            var missileOBJ = map.find(missile => missile.id === missiles[i]);
-            var x = missileOBJ.x;
-            var y = missileOBJ.y;
-            ctx.drawImage(missile, x, y, 48, 48);
-        }
-
-        // Draw ship
-        var ship = json.content.ship;
-        for (i = 99; i < 121; i++) {
-            var mapBox = map.find(box => box.id === i);
-            var x = mapBox.x;
-            var y = mapBox.y;
-            ctx.clearRect(x, y, x+48, y+48);
-        }
-        for (var i = 0; i < ship.length; i++) {
-            var spaceShipOBJ = map.find(spaceShip => spaceShip.id === ship[i]);
-            var x = spaceShipOBJ.x;
-            var y = spaceShipOBJ.y;
-            ctx.drawImage(spaceShip, x, y, 48, 48);
-        }
-
-    // TODO: loose screen
+    // Loose screen
     }else if(json.method === "looseScreen"){
         var score = json.content.score;
         var level = json.content.level;
 
-        ctx.font = "20px Arial";
         ctx.clearRect(0, 0, 528, 528);
-        ctx.fillText("GAME OVER\nLevel: " + level + " Score: " + score, 200, 200);
+        ctx.drawImage(loose, 0, 0, 528, 528);
+        ctx.font = "50px Arial";
+        ctx.textAlign = 'center';
+        ctx.shadowColor="#0f9fff";
+        ctx.shadowBlur=7;
+        ctx.lineWidth=5;
+        ctx.strokeText("level: " + level + " Score: " + score, 528/2, 50);
+        ctx.shadowBlur=0;
+        ctx.fillStyle="#69f0ff";
+        ctx.fillText("level: " + level + " Score: " + score, 528/2, 50);
+        
+        ctx.fillStyle="white";
+        ctx.textAlign = 'left';
+        ctx.font = "20px Arial";
 
-    //TODO: win screen
+    // Win screen
     }else if(json.method === "winScreen"){
         var score = json.content.score;
         var level = json.content.level;
 
-        ctx.font = "20px Arial";
         ctx.clearRect(0, 0, 528, 528);
-        ctx.fillText("YOU WIN\nLevel: " + level + " Score: " + score, 200, 200);
-    
+        ctx.drawImage(win, 0, 0, 528, 528);
+        ctx.font = "50px Arial";
+        ctx.textAlign = 'center';
+        ctx.shadowColor="#0f9fff";
+        ctx.shadowBlur=7;
+        ctx.lineWidth=5;
+        ctx.strokeText("level: " + level + " Score: " + score, 528/2, 50);
+        ctx.shadowBlur=0;
+        ctx.fillStyle="#69f0ff";
+        ctx.fillText("level: " + level + " Score: " + score, 528/2, 50);
+        
+        ctx.fillStyle="white";
+        ctx.textAlign = 'left';
+        ctx.font = "20px Arial";
 
     // Spectated close
     }else if (json.method === "spectatedClose"){
@@ -604,23 +632,97 @@ socket.addEventListener('message', (msg) => {
         setTimeout(function() {
             ctx.clearRect(0, 0, 528, 528);
         }, 1000);
-    }
 
     // Change ship
-    else if(json.method === "changeShip"){
+    }else if(json.method === "changeShip"){
         console.log("CHANGE SHIP: " + json.content);
-        if(json.content === 1){
+        if(json.content.shipNumber === 1){
             spaceShip.src = "https://cdn-icons-png.flaticon.com/512/1970/1970155.png";
-        }else if(json.content === 2){
+            missile.src = "https://cdn-icons-png.flaticon.com/512/1261/1261986.png";
+        }else if(json.content.shipNumber === 2){
             spaceShip.src = "https://cdn-icons-png.flaticon.com/512/1789/1789873.png";
-        }else if(json.content === 3){
+            // Copyright: https://www.flaticon.com/free-icon/missile_1261875
+            missile.src = "https://cdn-icons-png.flaticon.com/512/1261/1261875.png";
+        }else if(json.content.shipNumber === 3){
             spaceShip.src = "https://cdn-icons-png.flaticon.com/512/1114/1114780.png";
-        }else if(json.content === 4){
+            // Copyright: https://www.flaticon.com/free-icon/missile_5328877?term=missile&page=2&position=23&page=2&position=23&related_id=5328877&origin=search
+            missile.src = "https://cdn-icons-png.flaticon.com/512/5328/5328877.png";
+        }else if(json.content.shipNumber === 4){
             spaceShip.src = "https://cdn-icons-png.flaticon.com/512/3204/3204744.png";
+            // Copyright: https://www.flaticon.com/free-icon/laser_1374387?term=laser&page=1&position=4&page=1&position=4&related_id=1374387&origin=search
+            missile.src = "https://cdn-icons-png.flaticon.com/512/1374/1374387.png"
         }
+        clearScene();
+        drawShip(json);
+    // Change background
+    }else if(json.method === "changeBackground"){
+        backgroundImg = json.content.backgroundImg;
+        clearScene();
+        drawShip(json);
     }
 });
 
+function drawShip(json){
+    var ship = json.content.ship;
+    if(backgroundImg){
+        ctx.globalAlpha = 0.5;
+        for (i = 99; i < 121; i++) {
+            var mapBox = map.find(box => box.id === i);
+            var x = mapBox.x;
+            var y = mapBox.y;
+            ctx.drawImage(space, x, y, 48, 48);
+        }
+        ctx.globalAlpha = 1;
+    }
+    for (var i = 0; i < ship.length; i++) {
+        var spaceShipOBJ = map.find(spaceShip => spaceShip.id === ship[i]);
+        var x = spaceShipOBJ.x;
+        var y = spaceShipOBJ.y;
+        ctx.drawImage(spaceShip, x, y, 48, 48);
+    }
+}
+
+function drawMissiles(json){
+    var missiles = json.content.missiles
+    for (var i = 0; i < missiles.length; i++) {
+        var missileOBJ = map.find(missile => missile.id === missiles[i]);
+        var x = missileOBJ.x;
+        var y = missileOBJ.y;
+        ctx.drawImage(missile, x, y, 48, 48);
+    }
+}
+
+function drawAliens(json){
+    var aliens = json.content.aliens;
+    for (var i = 0; i < aliens.length; i++) {
+        var alienOBJ = map.find(alien => alien.id === aliens[i]);
+        var x = alienOBJ.x;
+        var y = alienOBJ.y;
+        ctx.drawImage(alien, x, y, 48, 48);
+    }
+}
+
+function drawScore(json){
+    var score = json.content.score;
+    var level = json.content.level;
+    var actualBest = json.content.bestScore;
+
+    ctx.font = "20px Arial";
+    ctx.fillText("Actual Best: " + actualBest, 5, 20);
+    ctx.fillText("Score: " + score, 5, 41);
+    ctx.fillText("Level: " + level, 5, 61);
+}
+
+function clearScene(){
+    ctx.clearRect(0, 0, 528, 528);
+    if(backgroundImg){
+        ctx.globalAlpha = 0.7;
+        map.forEach(function draw(element) {
+            ctx.drawImage(space, element.x, element.y, 48, 48);
+        });
+        ctx.globalAlpha = 1;
+    }
+}
 // ALL INPUTS
 usernameInput = document.getElementById('usernameInput');
 passwordInput = document.getElementById('passwordInput');
@@ -713,13 +815,16 @@ musicButton.addEventListener('click', function(){
     }
 });
 
-
-
 // If keyboard key is pressed
 document.addEventListener('keydown', checkKey);
 document.addEventListener('keyup', checkKey);
 
 function checkKey(e) {
+
+    if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].indexOf(e.code) > -1) {
+        e.preventDefault();
+    }
+
     e = e || window.event;
     if (e.keyCode == '37') {
         lefKeyImg = document.getElementById("leftKey");
@@ -767,7 +872,6 @@ function checkKey(e) {
         // console.log("space");
     }
 
-
     // Send pressed key to server
     if(e.type === 'keydown'){
         const content = {
@@ -784,7 +888,7 @@ function checkKey(e) {
 // Create a table for admin
 function adminTableCreate(place, users) {
     let tableDiv = document.createElement('div');
-    tableDiv.style = "background-color: #c182e3; height: 150px; overflow-y:auto; box-shadow: inset 0 0 5px #000000;"
+    tableDiv.style = "background-color: #c182e3; height: 150px; overflow-y:auto; overflow-x:auto; box-shadow: inset 0 0 5px #000000;"
     place.appendChild(tableDiv);
 
     let table = document.createElement('table');
@@ -835,7 +939,6 @@ function adminTableCreate(place, users) {
     }
   }
 
-
 function updateList(sessions){
     var ul = document.getElementById('activeList');
     ul.remove();
@@ -850,10 +953,9 @@ function updateList(sessions){
         li.innerHTML = 'session: ' + element;
         ul.appendChild(li);
     });
-    
-    // console.log("active games:" + session);
 }
 
+// Image buttons for changing ship
 starship1 = document.getElementById('starship1');
 starship1.addEventListener('click', () => {
     const payLoad = {
@@ -886,3 +988,13 @@ starship4.addEventListener('click', () => {
     }
     socket.send(JSON.stringify(payLoad));
 });
+
+// Image button for changing background
+bckgImg = document.getElementById('bckImg');
+bckgImg.addEventListener('click', () => {
+    const payLoad = {
+        "method": "changeBackground",
+        "content": backgroundImg
+    }
+    socket.send(JSON.stringify(payLoad));
+})

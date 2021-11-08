@@ -149,6 +149,7 @@ wsServer.on('connection', (ws) => {
 
                     const content = {
                         "session": session,
+                        "ship": ws.gameValues.ship
                     };
                     payLoad = {
                         "method": "registrationSucess",
@@ -191,6 +192,7 @@ wsServer.on('connection', (ws) => {
                         const content = {
                             "session": session,
                             "users": clientsData,
+                            "ship": ws.gameValues.ship
                         };
                         payLoad = {
                             "method": "loginAdmin",
@@ -199,6 +201,7 @@ wsServer.on('connection', (ws) => {
                     }else{
                         const content = {
                             "session": session,
+                            "ship": ws.gameValues.ship
                         };
                         payLoad = {
                             "method": "loginSucess",
@@ -254,8 +257,12 @@ wsServer.on('connection', (ws) => {
                     'levelCounter': 1,
                 }
                 ws.running = false;
+                const content = {
+                    "ship": ws.gameValues.ship
+                }
                 payLoad = {
                     "method": "restartSucess",
+                    "content": content
                 }
             }else{
                 payLoad = {
@@ -325,16 +332,40 @@ wsServer.on('connection', (ws) => {
                 }
             }
             ws.send(JSON.stringify(payLoad));
-        }
-        else if(json.method === "changeShip" && ws.spectate === false && ws.session !== -1){
+        
+
+        // User wants to change ship
+        }else if(json.method === "changeShip" && ws.spectate === false && ws.session !== -1){
+            const content = {
+                "shipNumber": json.content,
+                "ship": ws.gameValues.ship
+            }
             payLoad = {
                 "method": "changeShip",
-                "content": json.content
+                "content": content
             }
             ws.send(JSON.stringify(payLoad));
             for(i in ws.spectators){
                 ws.spectators[i].send(JSON.stringify(payLoad));
             }
+        
+        // User wants to change background
+        }else if(json.method === "changeBackground" && ws.spectate === false && ws.session !== -1){
+            const content = {
+                "backgroundImg": true,
+                "ship": ws.gameValues.ship
+            };
+            if(json.content){
+                content.backgroundImg = false;
+            }
+            payLoad = {
+                "method": "changeBackground",
+                "content": content
+            }
+            ws.send(JSON.stringify(payLoad));
+            for(i in ws.spectators){
+                ws.spectators[i].send(JSON.stringify(payLoad));
+            } 
         }
     });
 });
